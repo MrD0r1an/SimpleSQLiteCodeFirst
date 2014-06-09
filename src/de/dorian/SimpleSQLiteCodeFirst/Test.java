@@ -3,7 +3,7 @@ package de.dorian.SimpleSQLiteCodeFirst;
 import java.util.List;
 
 /**
- * Created by Rudolph on 06.06.14.
+ * Created by Rudolph on 06.06.14. ölhkl
  */
 public class Test {
     public static void main(String[] args){
