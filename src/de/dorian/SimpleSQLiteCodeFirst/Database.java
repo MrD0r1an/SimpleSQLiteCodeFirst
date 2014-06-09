@@ -1,7 +1,5 @@
 package de.dorian.SimpleSQLiteCodeFirst;
 
-import com.sun.xml.internal.rngom.parse.host.Base;
-
 import java.lang.reflect.Field;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
@@ -10,9 +8,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.text.NumberFormat;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Locale;
+import java.util.*;
 
 /**
  * Created by Rudolph on 06.06.14.
@@ -34,11 +30,14 @@ public class Database {
         Class entityClass = entity.getClass();
         Field[] fields =  entityClass.getFields();
         List valueList = new ArrayList();
+        List<Field> fieldsToSaveLater = new ArrayList<Field>();
         for (Field field : fields){
             Object value = field.get(entity);
-            if (value instanceof Integer || value instanceof String || value instanceof Double || value instanceof Float || value instanceof Date || value instanceof BaseEntity){
+            if (value instanceof Integer || value instanceof String || value instanceof Double || value instanceof Float || value instanceof Date || value instanceof BaseEntity || value instanceof Long){
                 valueList.add(value);
                 columns += "[" + field.getName() + "],";
+            } else if (isSavableList(field)){
+                fieldsToSaveLater.add(field);
             }
         }
 
@@ -52,30 +51,38 @@ public class Database {
             PreparedStatement statement = database.prepareStatement(query);
             for (int i = 0; i < valueList.size(); ++i){
                 Object value = valueList.get(i);
-                if (value instanceof String){
-                    statement.setString(i + 1, (String)value);
-                } else if (value instanceof Integer){
-                    statement.setInt(i + 1, (Integer)value);
-                } else if (value instanceof Float) {
-                    statement.setFloat(i + 1, (Float)value);
-                } else if (value instanceof Double) {
-                    statement.setDouble(i + 1, (Double)value);
-                } else if (value instanceof Date){
-                    statement.setLong(i + 1, ((Date)value).getTime());
-                } else if (value instanceof BaseEntity){
-                    BaseEntity e = (BaseEntity)value;
-                    createTable(value.getClass());
-                    if (e.getDatabaseId() == -1){
-                        addEntity(e);
-                    } else {
-                        updateEntity(e);
-                    }
-                    statement.setLong(i + 1, e.getDatabaseId());
-                }
+                setStatementValue(statement, value, i + 1);
             }
             statement.executeUpdate();
             statement.close();
             entity.setDatabaseId(database.getLastInsertRowId());
+
+            for (Field field : fieldsToSaveLater){
+                saveList(entity, field, field.get(entity));
+            }
+        }
+    }
+
+    private void setStatementValue(PreparedStatement statement, Object value, int index) throws SQLException, IllegalAccessException {
+        if (value instanceof String){
+            statement.setString(index, (String)value);
+        } else if (value instanceof Integer){
+            statement.setInt(index, (Integer)value);
+        } else if (value instanceof Float) {
+            statement.setFloat(index, (Float)value);
+        } else if (value instanceof Double) {
+            statement.setDouble(index, (Double)value);
+        } else if (value instanceof Date){
+            statement.setLong(index, ((Date)value).getTime());
+        } else if (value instanceof BaseEntity){
+            BaseEntity e = (BaseEntity)value;
+            createTable(value.getClass());
+            if (e.getDatabaseId() == -1){
+                addEntity(e);
+            } else {
+                updateEntity(e);
+            }
+            statement.setLong(index, e.getDatabaseId());
         }
     }
 
@@ -104,6 +111,8 @@ public class Database {
                     updateEntity(e);
                 }
                 updateString += String.format("[%s] = %s, ", field.getName(), e.getDatabaseId() + "");
+            } else if (isSavableList(field)){
+                saveList(entity, field, value);
             }
         }
 
@@ -172,6 +181,27 @@ public class Database {
         return false;
     }
 
+    private void saveList(BaseEntity entity, Field field, Object value) throws SQLException, IllegalAccessException {
+        createListTable(entity.getClass(), field);
+        String tableName = getListTableName(entity.getClass(), field);
+
+        String deleteQuery = "DELETE FROM %s WHERE [%s] = " + entity.getDatabaseId();
+        deleteQuery = String.format(deleteQuery, tableName, entity.getClass().getName());
+        System.out.println(deleteQuery);
+        database.executeUpdate(deleteQuery);
+
+        String insertQuery = "INSERT INTO %s ([%s], %s) VALUES (?, ?)";
+        insertQuery = String.format(insertQuery, tableName, entity.getClass().getName(), field.getName());
+        System.out.println(insertQuery);
+        PreparedStatement statement = database.prepareStatement(insertQuery);
+        statement.setLong(1, entity.getDatabaseId());
+        List list = (List)value;
+        for (Object item : list){
+            setStatementValue(statement, item, 2);
+            statement.executeUpdate();
+        }
+    }
+
     public <T extends BaseEntity> T getEntityById(Class<T> entityClass, long databaseId) throws SQLException, InstantiationException, IllegalAccessException {
         String query = "SELECT * FROM [" + entityClass.getName() + "] WHERE databaseId = " + databaseId;
         System.out.println(query);
@@ -187,7 +217,9 @@ public class Database {
             Class fieldClass = field.getType();
             String fieldName = field.getName();
             String sqlType = getSQLType(fieldClass);
-            otherColumns += String.format(", [%s] %s NOT NULL", fieldName, sqlType);
+            if (sqlType != null){
+                otherColumns += String.format(", [%s] %s NOT NULL", fieldName, sqlType);
+            }
         }
         query = String.format(query, entityClass.getName(), otherColumns);
         System.out.println(query);
@@ -213,8 +245,8 @@ public class Database {
     }
 
     public void deleteAssociationTable(Class class1, Class class2) throws SQLException {
-        String query = "DROP TABLE IF EXISTS [association:%s,%s]";
-        query = String.format(query, class1.getName(), class2.getName());
+        String query = "DROP TABLE IF EXISTS %s";
+        query = String.format(query, getAssociationTableName(class1, class2));
         System.out.println(query);
         database.executeUpdate(query);
     }
@@ -235,6 +267,13 @@ public class Database {
             System.out.println(query);
             database.executeUpdate(query);
         }
+    }
+
+    public void deleteListTable(Class entityClass, Field listField) throws SQLException {
+        String query = "DROP TABLE IF EXISTS %s";
+        query = String.format(query, getListTableName(entityClass, listField));
+        System.out.println(query);
+        database.executeUpdate(query);
     }
 
     private String getSQLType(Class fieldClass){

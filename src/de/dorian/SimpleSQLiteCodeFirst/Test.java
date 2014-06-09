@@ -9,7 +9,22 @@ import java.util.List;
  */
 public class Test {
     public static void main(String[] args){
-        test();
+        test3();
+    }
+
+    private static void test3(){
+        try {
+            Database database = new Database("test3");
+            database.createTable(TestEntity3.class);
+            TestEntity3 entity3 = new TestEntity3();
+            entity3.strings.add("asdf");
+            entity3.strings.add("asdfgash");
+            entity3.strings.add("kaöjkl");
+            database.addEntity(entity3);
+            database.close();
+        } catch (Exception e){
+            e.printStackTrace();
+        }
     }
 
     private static void test(){
