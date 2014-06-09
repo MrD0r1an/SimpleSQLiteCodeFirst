@@ -1,5 +1,7 @@
 package de.dorian.SimpleSQLiteCodeFirst;
 
+import java.lang.reflect.ParameterizedType;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -7,6 +9,10 @@ import java.util.List;
  */
 public class Test {
     public static void main(String[] args){
+        test();
+    }
+
+    private static void test(){
         try {
             Database database = new Database("test");
             TestEntity entity = new TestEntity();
@@ -28,5 +34,12 @@ public class Test {
         } catch (Exception e){
             e.printStackTrace();
         }
+    }
+
+    private static void test2(){
+        List<TestEntity> list = new ArrayList<TestEntity>();
+        Class<?> c = list.getClass();
+        System.out.println(c);
+        System.out.println(List.class.isAssignableFrom(c));
     }
 }
