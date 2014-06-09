@@ -1,5 +1,7 @@
 package de.dorian.SimpleSQLiteCodeFirst;
 
+import com.sun.xml.internal.rngom.parse.host.Base;
+
 import java.lang.reflect.Field;
 import java.sql.Date;
 import java.sql.PreparedStatement;
@@ -32,7 +34,7 @@ public class Database {
         List valueList = new ArrayList();
         for (Field field : fields){
             Object value = field.get(entity);
-            if (value instanceof Integer || value instanceof String || value instanceof Double || value instanceof Float || value instanceof Date){
+            if (value instanceof Integer || value instanceof String || value instanceof Double || value instanceof Float || value instanceof Date || value instanceof BaseEntity){
                 valueList.add(value);
                 columns += "[" + field.getName() + "],";
             }
@@ -58,6 +60,15 @@ public class Database {
                     statement.setDouble(i + 1, (Double)value);
                 } else if (value instanceof Date){
                     statement.setLong(i + 1, ((Date)value).getTime());
+                } else if (value instanceof BaseEntity){
+                    BaseEntity e = (BaseEntity)value;
+                    createTable(value.getClass());
+                    if (e.getDatabaseId() == -1){
+                        addEntity(e);
+                    } else {
+                        updateEntity(e);
+                    }
+                    statement.setLong(i + 1, e.getDatabaseId());
                 }
             }
             statement.executeUpdate();
@@ -82,6 +93,15 @@ public class Database {
                 updateString += String.format("%s = '%s', ", field.getName(), value.toString());
             } else if (value instanceof Date){
                 updateString += String.format("[%s] = %s, ", field.getName(), ((Date)value).getTime() + "");
+            } else if (value instanceof BaseEntity){
+                BaseEntity e = (BaseEntity)value;
+                createTable(value.getClass());
+                if (e.getDatabaseId() == -1){
+                    addEntity(e);
+                } else {
+                    updateEntity(e);
+                }
+                updateString += String.format("[%s] = %s, ", field.getName(), e.getDatabaseId() + "");
             }
         }
 
@@ -103,27 +123,43 @@ public class Database {
         ResultSet resultSet = database.executeQuery(query);
 
         while(resultSet.next()){
-            T entity = entityClass.newInstance();
-            entity.setDatabaseId(resultSet.getLong(1));
-            Field[] fields = entityClass.getFields();
-            for (Field field : fields){
-                Class fieldClass = field.getType();
-                if (fieldClass.equals(int.class)){
-                    field.set(entity, resultSet.getInt(field.getName()));
-                } else if (fieldClass.equals(String.class)){
-                    field.set(entity, resultSet.getString(field.getName()));
-                } else if (fieldClass.equals(float.class)){
-                    field.set(entity, resultSet.getFloat(field.getName()));
-                } else if (fieldClass.equals(double.class)){
-                    field.set(entity, resultSet.getDouble(field.getName()));
-                } else if (fieldClass.equals(Date.class)){
-                    field.set(entity, new Date(resultSet.getLong(field.getName())));
-                }
-            }
+            T entity = getEntity(entityClass, resultSet);
             entities.add(entity);
         }
 
         return entities;
+    }
+
+    private <T extends BaseEntity> T getEntity(Class<T> entityClass, ResultSet resultSet) throws IllegalAccessException, InstantiationException, SQLException {
+        T entity = entityClass.newInstance();
+        entity.setDatabaseId(resultSet.getLong(1));
+        Field[] fields = entityClass.getFields();
+        for (Field field : fields){
+            Class fieldClass = field.getType();
+            if (fieldClass.equals(int.class)){
+                field.set(entity, resultSet.getInt(field.getName()));
+            } else if (fieldClass.equals(String.class)){
+                field.set(entity, resultSet.getString(field.getName()));
+            } else if (fieldClass.equals(float.class)){
+                field.set(entity, resultSet.getFloat(field.getName()));
+            } else if (fieldClass.equals(double.class)){
+                field.set(entity, resultSet.getDouble(field.getName()));
+            } else if (fieldClass.equals(Date.class)){
+                field.set(entity, new Date(resultSet.getLong(field.getName())));
+            } else if (BaseEntity.class.isAssignableFrom(fieldClass)){
+                long id = resultSet.getLong(field.getName());
+                Object e = getEntityById(fieldClass, id);
+                field.set(entity, e);
+            }
+        }
+        return entity;
+    }
+
+    public <T extends BaseEntity> T getEntityById(Class<T> entityClass, long databaseId) throws SQLException, InstantiationException, IllegalAccessException {
+        String query = "SELECT * FROM [" + entityClass.getName() + "] WHERE databaseId = " + databaseId;
+        System.out.println(query);
+        ResultSet resultSet = database.executeQuery(query);
+        return getEntity(entityClass, resultSet);
     }
 
     public void createTable(Class entityClass) throws SQLException {
@@ -139,11 +175,12 @@ public class Database {
                 otherColumns += ", [" + fieldName + "] TEXT NOT NULL";
             } else if (fieldClass.equals(float.class) || fieldClass.equals(double.class)){
                 otherColumns += ", [" + fieldName + "] REAL NOT NULL";
-            } else if (fieldClass.equals(Date.class)){
+            } else if (fieldClass.equals(Date.class) || BaseEntity.class.isAssignableFrom(fieldClass)){
                 otherColumns += ", [" + fieldName + "] INTEGER NOT NULL";
             }
         }
         query = String.format(query, entityClass.getName(), otherColumns);
+        System.out.println(query);
         database.executeUpdate(query);
     }
 
