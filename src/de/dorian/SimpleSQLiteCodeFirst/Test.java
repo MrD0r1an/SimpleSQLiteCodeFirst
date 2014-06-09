@@ -21,6 +21,13 @@ public class Test {
             entity3.strings.add("asdfgash");
             entity3.strings.add("kaöjkl");
             database.addEntity(entity3);
+            List<TestEntity3> entities = database.getEntities(TestEntity3.class);
+            for (TestEntity3 entity : entities){
+                System.out.println(String.format("id: %d int: %d", entity.getDatabaseId(), entity.number));
+                for (String string : entity.strings){
+                    System.out.println("\t" + string);
+                }
+            }
             database.close();
         } catch (Exception e){
             e.printStackTrace();

@@ -146,39 +146,63 @@ public class Database {
         entity.setDatabaseId(resultSet.getLong(1));
         Field[] fields = entityClass.getFields();
         for (Field field : fields){
-            Class fieldClass = field.getType();
-            if (fieldClass.equals(int.class)){
-                field.set(entity, resultSet.getInt(field.getName()));
-            } else if (fieldClass.equals(String.class)){
-                field.set(entity, resultSet.getString(field.getName()));
-            } else if (fieldClass.equals(float.class)){
-                field.set(entity, resultSet.getFloat(field.getName()));
-            } else if (fieldClass.equals(double.class)){
-                field.set(entity, resultSet.getDouble(field.getName()));
-            } else if (fieldClass.equals(Date.class)){
-                field.set(entity, new Date(resultSet.getLong(field.getName())));
-            } else if (BaseEntity.class.isAssignableFrom(fieldClass)){
-                long id = resultSet.getLong(field.getName());
-                Object e = getEntityById(fieldClass, id);
-                field.set(entity, e);
+            Object value;
+            if (isSavableList(field)){
+                value = loadList(entity, field);
+            } else {
+                value = getValueFromResultSet(resultSet, field.getType(), field.getName());
             }
+            field.set(entity, value);
         }
         return entity;
     }
 
+    private Object getValueFromResultSet(ResultSet resultSet, Class fieldClass, String fieldName) throws SQLException, IllegalAccessException, InstantiationException {
+        if (fieldClass.equals(int.class)){
+            return resultSet.getInt(fieldName);
+        } else if (fieldClass.equals(String.class)){
+            return resultSet.getString(fieldName);
+        } else if (fieldClass.equals(float.class)){
+            return resultSet.getFloat(fieldName);
+        } else if (fieldClass.equals(double.class)){
+            return resultSet.getDouble(fieldName);
+        } else if (fieldClass.equals(Date.class)){
+            return new Date(resultSet.getLong(fieldName));
+        } else if (BaseEntity.class.isAssignableFrom(fieldClass)){
+            long id = resultSet.getLong(fieldName);
+            return getEntityById(fieldClass, id);
+        }
+        return null;
+    }
+
+    private List loadList(BaseEntity entity, Field field) throws SQLException, InstantiationException, IllegalAccessException {
+        List list = new ArrayList();
+        String query = "SELECT %s FROM %s WHERE [%s] = " + entity.getDatabaseId();
+        query = String.format(query, field.getName(), getListTableName(entity.getClass(), field), entity.getClass().getName());
+        System.out.println(query);
+        ResultSet resultSet = database.executeQuery(query);
+        Class itemClass = getGenericClassAttribute(field);
+        while (resultSet.next()){
+            list.add(getValueFromResultSet(resultSet, itemClass, field.getName()));
+        }
+
+        return list;
+    }
+
     private boolean isSavableList(Field field){
+        Class entityClass = getGenericClassAttribute(field);
+        return entityClass != null && (entityClass.equals(String.class) || entityClass.equals(double.class) || entityClass.equals(float.class) || entityClass.equals(int.class) || entityClass.equals(Date.class) || BaseEntity.class.isAssignableFrom(entityClass) || entityClass.equals(long.class));
+    }
+
+    private Class getGenericClassAttribute(Field field){
         Type genericType = field.getGenericType();
         if (genericType instanceof ParameterizedType && List.class.isAssignableFrom(field.getType())){
             ParameterizedType parameterizedType = (ParameterizedType)genericType;
             if (parameterizedType.getActualTypeArguments().length == 1){
-                Class entityClass = (Class)parameterizedType.getActualTypeArguments()[0];
-                if (entityClass.equals(String.class) || entityClass.equals(double.class) || entityClass.equals(float.class) || entityClass.equals(int.class) || entityClass.equals(Date.class) || BaseEntity.class.isAssignableFrom(entityClass) || entityClass.equals(long.class)){
-                    return true;
-                }
+                return (Class)parameterizedType.getActualTypeArguments()[0];
             }
         }
-
-        return false;
+        return null;
     }
 
     private void saveList(BaseEntity entity, Field field, Object value) throws SQLException, IllegalAccessException {
