@@ -1,11 +1,14 @@
 package de.dorian.SimpleSQLiteCodeFirst;
 
 import java.lang.reflect.Field;
+import java.sql.Date;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.text.NumberFormat;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 /**
  * Created by Rudolph on 06.06.14.
@@ -29,7 +32,7 @@ public class Database {
         List valueList = new ArrayList();
         for (Field field : fields){
             Object value = field.get(entity);
-            if (value instanceof Integer || value instanceof String || value instanceof Double || value instanceof Float){
+            if (value instanceof Integer || value instanceof String || value instanceof Double || value instanceof Float || value instanceof Date){
                 valueList.add(value);
                 columns += "[" + field.getName() + "],";
             }
@@ -53,6 +56,8 @@ public class Database {
                     statement.setFloat(i + 1, (Float)value);
                 } else if (value instanceof Double) {
                     statement.setDouble(i + 1, (Double)value);
+                } else if (value instanceof Date){
+                    statement.setLong(i + 1, ((Date)value).getTime());
                 }
             }
             statement.executeUpdate();
@@ -72,9 +77,11 @@ public class Database {
         for (Field field : fields){
             Object value = field.get(entity);
             if (value instanceof Integer || value instanceof Double || value instanceof Float){
-                updateString += String.format("[%s] = %s, ", field.getName(), value.toString());
+                updateString += String.format("[%s] = %s, ", field.getName(), NumberFormat.getInstance(Locale.ENGLISH).format(value));
             } else if (value instanceof String){
                 updateString += String.format("%s = '%s', ", field.getName(), value.toString());
+            } else if (value instanceof Date){
+                updateString += String.format("[%s] = %s, ", field.getName(), ((Date)value).getTime() + "");
             }
         }
 
@@ -109,6 +116,8 @@ public class Database {
                     field.set(entity, resultSet.getFloat(field.getName()));
                 } else if (fieldClass.equals(double.class)){
                     field.set(entity, resultSet.getDouble(field.getName()));
+                } else if (fieldClass.equals(Date.class)){
+                    field.set(entity, new Date(resultSet.getLong(field.getName())));
                 }
             }
             entities.add(entity);
@@ -130,9 +139,24 @@ public class Database {
                 otherColumns += ", [" + fieldName + "] TEXT NOT NULL";
             } else if (fieldClass.equals(float.class) || fieldClass.equals(double.class)){
                 otherColumns += ", [" + fieldName + "] REAL NOT NULL";
+            } else if (fieldClass.equals(Date.class)){
+                otherColumns += ", [" + fieldName + "] INTEGER NOT NULL";
             }
         }
         query = String.format(query, entityClass.getName(), otherColumns);
+        database.executeUpdate(query);
+    }
+
+    public void deleteTable(Class entityClass) throws SQLException {
+        String query = "DROP TABLE IF EXISTS [%s];";
+        database.executeUpdate(String.format(query, entityClass.getName()));
+    }
+
+    public void deleteEntity(BaseEntity entity) throws SQLException {
+        if (entity.getDatabaseId() == -1) return;
+        String query = "DELETE FROM [%s] where [databaseId] = " + entity.getDatabaseId();
+        query = String.format(query, entity.getClass().getName());
+        System.out.println(query);
         database.executeUpdate(query);
     }
 

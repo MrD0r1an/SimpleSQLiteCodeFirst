@@ -10,15 +10,12 @@ public class Test {
         try {
             Database database = new Database("test");
             TestEntity entity = new TestEntity();
-            entity.setDatabaseId(-1);
-            entity.test = "klö";
-            entity.test2 = 90;
-            //database.updateEntity(entity);
-            //database.createTable(TestEntity.class);
-            //database.addEntity(entity);
+            database.deleteTable(TestEntity.class);
+            database.createTable(TestEntity.class);
+            database.addEntity(entity);
             List<TestEntity> entities = database.getEntities(TestEntity.class);
             for (TestEntity e : entities){
-                System.out.println(e.test +" "+ e.getDatabaseId());
+                System.out.println(String.format("id: %d string: %s int: %d date: %s", e.getDatabaseId(), e.test, e.test2, e.date.toString()));
             }
             database.close();
         } catch (Exception e){
